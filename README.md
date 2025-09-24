@@ -3,7 +3,7 @@
 A powerful custom node extension for ComfyUI that enables automatic iteration through multiple prompts with corresponding filename generation. Perfect for batch processing different variations like character face angles, poses, or any sequential prompt workflow.
 
 **Author:** BiloxiStudios Inc - BizaNator
-**Version:** 2.0.0
+**Version:** 2.1.0
 **License:** MIT
 
 ## Features
@@ -15,16 +15,19 @@ A powerful custom node extension for ComfyUI that enables automatic iteration th
 - **State Persistence**: Remembers position between queue runs
 - **Reset Capability**: Start over from the beginning at any time
 - **Dynamic Inputs**: NEW! Support for multiple string inputs (up to 20 prompts)
+- **Seed Management**: NEW v2.1! INT seed output for KSampler with intelligent batch control
 
 ### 📦 Three Node Types
 
-#### 1. **Prompt Iterator Dynamic** (NEW v2.0!)
+#### 1. **Prompt Iterator Dynamic** (NEW v2.1!)
 Dynamic input system with multiple string connections:
 - Connect up to 20 different prompt sources
 - Each input can be a text box or string node
 - Perfect for modular workflow design
 - Auto-detects connected inputs
 - Supports all filename modes
+- **NEW**: INT seed output for KSampler connection
+- **NEW**: Multiple seed modes (fixed, increment_batch, increment_prompt, random)
 
 #### 2. **Prompt Iterator** (Basic)
 Simple and straightforward prompt iteration with essential features:
@@ -42,6 +45,8 @@ Enhanced version with professional features:
 - Random order with seed control
 - Ping-pong and loop modes
 - Debug information output
+- **NEW**: INT seed output for KSampler connection
+- **NEW**: Multiple seed modes for batch consistency
 
 ## Installation
 
@@ -108,6 +113,8 @@ _back
 | suffixes | STRING | List of suffixes for filename generation |
 | manual_index | INT | Index for manual mode |
 | reset | BOOLEAN | Reset iterator to beginning |
+| generation_seed | INT | Base seed for generation (NEW v2.1) |
+| seed_mode | ENUM | "fixed", "increment_batch", "increment_prompt", "random" |
 
 ### Prompt Iterator (Basic)
 
@@ -132,7 +139,8 @@ All basic parameters plus:
 | prepend_text | STRING | Text to add before each prompt |
 | append_text | STRING | Text to add after each prompt |
 | loop_mode | ENUM | "once", "loop", or "ping_pong" |
-| random_seed | INT | Seed for random mode (-1 for random) |
+| generation_seed | INT | Base seed for generation (NEW v2.1) |
+| seed_mode | ENUM | "fixed", "increment_batch", "increment_prompt", "random" |
 
 ## Outputs
 
@@ -143,7 +151,39 @@ All basic parameters plus:
 | current_index | INT | Current position in list |
 | total_count | INT | Total number of prompts |
 | status | STRING | Human-readable status |
+| seed | INT | (Dynamic & Advanced) Seed for KSampler (NEW v2.1) |
 | debug_info | STRING | (Advanced only) JSON debug data |
+
+## Seed Management (NEW v2.1)
+
+The Dynamic and Advanced nodes now include intelligent seed management for consistent batch generation:
+
+### Seed Modes
+
+1. **Fixed**: Uses the same seed for all prompts
+   - Perfect for comparing different prompts with identical generation parameters
+   - Example: Testing different face angles with the same seed
+
+2. **Increment Batch**: Increments seed when returning to first prompt
+   - Ideal for generating multiple variations of a complete set
+   - Example: Generate 3 full sets of character angles with different seeds per set
+
+3. **Increment Prompt**: Increments seed for each new prompt
+   - Each prompt gets a unique, sequential seed
+   - Example: Ensure each face angle has a slightly different variation
+
+4. **Random**: Generates a random seed for each execution
+   - Maximum variation between generations
+   - Example: Exploring diverse outputs
+
+### Connecting to KSampler
+
+Simply connect the `seed` INT output to your KSampler's `seed` input:
+```
+PromptIteratorDynamic.seed → KSampler.seed
+```
+
+This ensures consistent seed management across your batch generations.
 
 ## Workflow Integration
 
@@ -152,17 +192,29 @@ All basic parameters plus:
 2. Enter your prompts or connect string inputs
 3. Connect `prompt` output to your text encoding node
 4. Connect `filename` output to SaveImage's filename_prefix
-5. Queue your workflow multiple times
+5. Connect `seed` output to KSampler's seed input (v2.1)
+6. Queue your workflow multiple times
 
 ### Dynamic Input Setup (v2.0)
 1. Add Prompt Iterator Dynamic node
 2. Connect string nodes to prompt_1, prompt_2, etc.
 3. Node automatically detects connected inputs
-4. Queue to iterate through all connected prompts
+4. Connect seed output to KSampler (v2.1)
+5. Queue to iterate through all connected prompts
 
 ## Version History
 
-### v2.0.0 (Current)
+### v2.1.0 (Current)
+- Added INT seed output for KSampler connection
+- Intelligent seed management with multiple modes:
+  - **Fixed**: Same seed for all prompts
+  - **Increment Batch**: Increment seed when restarting prompt list
+  - **Increment Prompt**: Increment seed on each prompt
+  - **Random**: Random seed for each generation
+- Seed persistence across workflow executions
+- Support for batch-based seed incrementing
+
+### v2.0.0
 - Added Prompt Iterator Dynamic with multiple string inputs
 - Support for up to 20 dynamic prompt connections
 - Updated author: BiloxiStudios Inc - BizaNator

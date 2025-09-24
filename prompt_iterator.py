@@ -2,7 +2,7 @@
 Prompt Iterator Nodes for ComfyUI
 Provides nodes for iterating through multiple prompts with automatic filename generation
 Author: BiloxiStudios Inc - BizaNator
-Version: 2.0.0
+Version: 2.1.0
 """
 
 import json
@@ -104,11 +104,15 @@ class PromptIteratorDynamic:
                     "label_on": "Reset",
                     "label_off": "Continue"
                 }),
-                "random_seed": ("INT", {
+                "generation_seed": ("INT", {
                     "default": -1,
                     "min": -1,
                     "max": 2147483647,
-                    "step": 1
+                    "step": 1,
+                    "display": "number"
+                }),
+                "seed_mode": (["fixed", "increment_batch", "increment_prompt", "random"], {
+                    "default": "increment_batch"
                 }),
                 "workflow_id": ("STRING", {
                     "default": "default",
@@ -128,8 +132,8 @@ class PromptIteratorDynamic:
 
         return inputs
 
-    RETURN_TYPES = ("STRING", "STRING", "INT", "INT", "STRING")
-    RETURN_NAMES = ("prompt", "filename", "current_index", "total_count", "status")
+    RETURN_TYPES = ("STRING", "STRING", "INT", "INT", "STRING", "INT")
+    RETURN_NAMES = ("prompt", "filename", "current_index", "total_count", "status", "seed")
     FUNCTION = "iterate_prompts"
     CATEGORY = "utils/prompt"
     OUTPUT_NODE = False
@@ -145,8 +149,8 @@ class PromptIteratorDynamic:
     def iterate_prompts(self, mode: str, filename_mode: str, base_filename: str,
                        suffixes: str = "", filename_template: str = "",
                        manual_index: int = 0, reset: bool = False,
-                       random_seed: int = -1, workflow_id: str = "default",
-                       **kwargs) -> Tuple:
+                       generation_seed: int = -1, seed_mode: str = "increment_batch",
+                       workflow_id: str = "default", **kwargs) -> Tuple:
         """
         Main execution function for dynamic prompt iteration
         """
@@ -175,7 +179,9 @@ class PromptIteratorDynamic:
             ITERATOR_STATE[state_key] = {
                 "index": 0,
                 "iteration": 0,
-                "random_order": list(range(total_count))
+                "random_order": list(range(total_count)),
+                "base_seed": generation_seed if generation_seed >= 0 else random.randint(0, 2147483647),
+                "current_seed": generation_seed if generation_seed >= 0 else random.randint(0, 2147483647)
             }
 
         state = ITERATOR_STATE[state_key]
@@ -185,13 +191,15 @@ class PromptIteratorDynamic:
             state["index"] = 0
             state["iteration"] = 0
             state["random_order"] = list(range(total_count))
-
-        # Update random order if needed
-        if mode == "random":
-            if random_seed >= 0:
-                random.seed(random_seed)
+            if generation_seed >= 0:
+                state["base_seed"] = generation_seed
+                state["current_seed"] = generation_seed
             else:
-                random.seed()
+                state["base_seed"] = random.randint(0, 2147483647)
+                state["current_seed"] = state["base_seed"]
+
+        # Update random order if needed for prompt shuffling
+        if mode == "random":
             random.shuffle(state["random_order"])
 
         # Determine current index based on mode
@@ -229,6 +237,26 @@ class PromptIteratorDynamic:
         else:  # auto_index
             current_filename = f"{base_filename}_{current_index:03d}"
 
+        # Handle seed generation based on mode
+        output_seed = state["current_seed"]
+
+        # Determine when to increment seed
+        should_increment = False
+        if seed_mode == "increment_prompt":
+            # Increment on every prompt
+            should_increment = True
+        elif seed_mode == "increment_batch" and current_index == 0 and state["iteration"] > 0:
+            # Increment only when starting a new batch
+            should_increment = True
+        elif seed_mode == "random":
+            # Always randomize
+            output_seed = random.randint(0, 2147483647)
+
+        # Apply increment if needed
+        if should_increment and seed_mode != "random":
+            state["current_seed"] = (state["current_seed"] + 1) % 2147483648
+            output_seed = state["current_seed"]
+
         # Status message
         status = f"Prompt {current_index + 1}/{total_count}"
         if mode == "sequential":
@@ -236,7 +264,7 @@ class PromptIteratorDynamic:
         elif mode == "random":
             status += " (random)"
 
-        return (current_prompt, current_filename, current_index, total_count, status)
+        return (current_prompt, current_filename, current_index, total_count, status, output_seed)
 
 
 class PromptIterator:
@@ -429,11 +457,15 @@ class PromptIteratorAdvanced:
                     "label_on": "Reset",
                     "label_off": "Continue"
                 }),
-                "random_seed": ("INT", {
+                "generation_seed": ("INT", {
                     "default": -1,
                     "min": -1,
                     "max": 2147483647,
-                    "step": 1
+                    "step": 1,
+                    "display": "number"
+                }),
+                "seed_mode": (["fixed", "increment_batch", "increment_prompt", "random"], {
+                    "default": "increment_batch"
                 }),
                 "workflow_id": ("STRING", {
                     "default": "default",
@@ -442,8 +474,8 @@ class PromptIteratorAdvanced:
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "INT", "INT", "STRING", "STRING")
-    RETURN_NAMES = ("prompt", "filename", "current_index", "total_count", "status", "debug_info")
+    RETURN_TYPES = ("STRING", "STRING", "INT", "INT", "STRING", "INT", "STRING")
+    RETURN_NAMES = ("prompt", "filename", "current_index", "total_count", "status", "seed", "debug_info")
     FUNCTION = "iterate_prompt_advanced"
     CATEGORY = "utils/prompt"
     OUTPUT_NODE = False
@@ -461,7 +493,8 @@ class PromptIteratorAdvanced:
                                suffixes: str = "", filename_template: str = "",
                                prepend_text: str = "", append_text: str = "",
                                manual_index: int = 0, loop_mode: str = "loop",
-                               reset: bool = False, random_seed: int = -1,
+                               reset: bool = False, generation_seed: int = -1,
+                               seed_mode: str = "increment_batch",
                                workflow_id: str = "default") -> Tuple:
         """
         Advanced prompt iteration with enhanced features
@@ -485,7 +518,9 @@ class PromptIteratorAdvanced:
                 "index": 0,
                 "iteration": 0,
                 "direction": 1,  # For ping-pong mode
-                "random_order": list(range(total_count))
+                "random_order": list(range(total_count)),
+                "base_seed": generation_seed if generation_seed >= 0 else random.randint(0, 2147483647),
+                "current_seed": generation_seed if generation_seed >= 0 else random.randint(0, 2147483647)
             }
 
         state = ITERATOR_STATE[state_key]
@@ -496,10 +531,15 @@ class PromptIteratorAdvanced:
             state["iteration"] = 0
             state["direction"] = 1
             state["random_order"] = list(range(total_count))
+            if generation_seed >= 0:
+                state["base_seed"] = generation_seed
+                state["current_seed"] = generation_seed
+            else:
+                state["base_seed"] = random.randint(0, 2147483647)
+                state["current_seed"] = state["base_seed"]
 
-        # Update random order if needed
-        if mode == "random" and random_seed >= 0:
-            random.seed(random_seed if random_seed >= 0 else None)
+        # Update random order if needed for prompt shuffling
+        if mode == "random":
             random.shuffle(state["random_order"])
 
         # Determine current index
@@ -563,6 +603,24 @@ class PromptIteratorAdvanced:
         elif mode == "random":
             status += " (random)"
 
+        # Handle seed generation based on mode
+        output_seed = state["current_seed"]
+
+        # Determine if we should increment the seed
+        should_increment = False
+        if seed_mode == "increment_prompt":
+            should_increment = True
+        elif seed_mode == "increment_batch" and current_index == 0 and state["iteration"] > 0:
+            should_increment = True
+        elif seed_mode == "random":
+            output_seed = random.randint(0, 2147483647)
+            state["current_seed"] = output_seed
+
+        # Apply increment if needed
+        if should_increment and seed_mode != "random":
+            state["current_seed"] = (state["current_seed"] + 1) % 2147483648
+            output_seed = state["current_seed"]
+
         # Debug info
         debug_info = json.dumps({
             "mode": mode,
@@ -571,10 +629,12 @@ class PromptIteratorAdvanced:
             "state_index": state["index"],
             "iteration": state["iteration"],
             "loop_mode": loop_mode,
-            "filename": current_filename
+            "filename": current_filename,
+            "seed": output_seed,
+            "seed_mode": seed_mode
         }, indent=2)
 
-        return (current_prompt, current_filename, current_index, total_count, status, debug_info)
+        return (current_prompt, current_filename, current_index, total_count, status, output_seed)
 
 
 # Node registration
